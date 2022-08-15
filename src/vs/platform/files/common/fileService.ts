@@ -238,6 +238,14 @@ export class FileService extends Disposable implements IFileService {
 	private async toFileStat(provider: IFileSystemProvider, resource: URI, stat: IStat | { type: FileType } & Partial<IStat>, siblings: number | undefined, resolveMetadata: boolean, recurse: (stat: IFileStat, siblings?: number) => boolean): Promise<IFileStat> {
 		const { providerExtUri } = this.getExtUri(provider);
 
+		const real = async (resource: URI) => {
+			try {
+				return provider.realpath ? (await provider.realpath(resource)).path : undefined;
+			} catch (e) {
+			}
+			return undefined;
+		};
+
 		// convert to file stat
 		const fileStat: IFileStat = {
 			resource,
@@ -245,6 +253,7 @@ export class FileService extends Disposable implements IFileService {
 			isFile: (stat.type & FileType.File) !== 0,
 			isDirectory: (stat.type & FileType.Directory) !== 0,
 			isSymbolicLink: (stat.type & FileType.SymbolicLink) !== 0,
+			realPath: await real(resource),
 			mtime: stat.mtime,
 			ctime: stat.ctime,
 			size: stat.size,

@@ -52,6 +52,7 @@ export abstract class AbstractDiskFileSystemProviderChannel<T> extends Disposabl
 			case 'delete': return this.delete(uriTransformer, arg[0], arg[1]);
 			case 'watch': return this.watch(uriTransformer, arg[0], arg[1], arg[2], arg[3]);
 			case 'unwatch': return this.unwatch(arg[0], arg[1]);
+			case 'realpath': return this.realpath(uriTransformer, arg[0]);
 		}
 
 		throw new Error(`IPC Command ${command} not found`);
@@ -95,6 +96,11 @@ export abstract class AbstractDiskFileSystemProviderChannel<T> extends Disposabl
 		const buffer = await this.provider.readFile(resource, opts);
 
 		return VSBuffer.wrap(buffer);
+	}
+
+	private async realpath(uriTransformer: IURITransformer, _resource: UriComponents): Promise<URI> {
+		const resource = this.transformIncoming(uriTransformer, _resource, true);
+		return this.provider.realpath(resource);
 	}
 
 	private onReadFileStream(uriTransformer: IURITransformer, _resource: URI, opts: IFileReadStreamOptions): Event<ReadableStreamEventPayload<VSBuffer>> {

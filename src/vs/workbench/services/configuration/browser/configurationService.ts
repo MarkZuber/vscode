@@ -967,11 +967,18 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 	// Workspace folders those cannot be resolved are not filtered because they are handled by the Explorer.
 	private async toValidWorkspaceFolders(workspaceFolders: WorkspaceFolder[]): Promise<WorkspaceFolder[]> {
 		const validWorkspaceFolders: WorkspaceFolder[] = [];
-		for (const workspaceFolder of workspaceFolders) {
+		for (let workspaceFolder of workspaceFolders) {
 			try {
 				const result = await this.fileService.stat(workspaceFolder.uri);
 				if (!result.isDirectory) {
 					continue;
+				}
+				if (result.isSymbolicLink && result.realPath) {
+					this.logService.info(`WorkspaceFolderRealpathed. resource: ${workspaceFolder.uri}  realpath: ${result.realPath}`);
+					workspaceFolder = toWorkspaceFolder(URI.from({
+						...workspaceFolder.uri,
+						path: result.realPath,
+					}));
 				}
 			} catch (e) {
 				this.logService.warn(`Ignoring the error while validating workspace folder ${workspaceFolder.uri.toString()} - ${toErrorMessage(e)}`);

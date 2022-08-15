@@ -119,6 +119,10 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		return this.provider.copy(from, to, opts);
 	}
 
+	realpath(resource: URI): Promise<URI> {
+		return this.provider.realpath(resource);
+	}
+
 	//#endregion
 
 	//#region Clone File

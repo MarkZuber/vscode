@@ -15,6 +15,8 @@ import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
 import { isEqual } from 'vs/base/common/resources';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { applyTextEditorOptions } from 'vs/workbench/common/editor/editorOptions';
+import { IFileService } from 'vs/platform/files/common/files';
+import { URI } from 'vs/base/common/uri';
 
 export class CodeEditorService extends AbstractCodeEditorService {
 
@@ -22,6 +24,7 @@ export class CodeEditorService extends AbstractCodeEditorService {
 		@IEditorService private readonly editorService: IEditorService,
 		@IThemeService themeService: IThemeService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IFileService private readonly fileService: IFileService,
 	) {
 		super(themeService);
 
@@ -74,6 +77,20 @@ export class CodeEditorService extends AbstractCodeEditorService {
 
 	// Open using our normal editor service
 	private async doOpenCodeEditor(input: IResourceEditorInput, source: ICodeEditor | null, sideBySide?: boolean): Promise<ICodeEditor | null> {
+
+		try {
+			const resolved = await this.fileService.resolve(input.resource);
+			if (resolved.realPath && input.resource.path !== resolved.realPath) {
+				input = {
+					...input,
+					resource: URI.from({
+						...input.resource,
+						path: resolved.realPath,
+					}),
+				};
+			}
+		} catch (_e) {
+		}
 
 		// Special case: we want to detect the request to open an editor that
 		// is different from the current one to decide whether the current editor

@@ -212,8 +212,15 @@ export abstract class AbstractFileDialogService implements IFileDialogService {
 		const title = nls.localize('openFolder.title', 'Open Folder');
 		const availableFileSystems = this.addFileSchemaIfNeeded(schema, true);
 
-		const uri = await this.pickResource({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, defaultUri: options.defaultUri, title, availableFileSystems });
+		let uri = await this.pickResource({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, defaultUri: options.defaultUri, title, availableFileSystems });
 		if (uri) {
+			const stat = await this.fileService.resolve(uri);
+			if (stat.realPath) {
+				uri = URI.from({
+					...uri,
+					path: stat.realPath,
+				});
+			}
 			return this.hostService.openWindow([{ folderUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
 		}
 	}

@@ -242,5 +242,10 @@ export class DiskFileSystemProviderClient extends Disposable implements
 		return toDisposable(() => this.channel.call('unwatch', [this.sessionId, req]));
 	}
 
+	async realpath(resource: URI): Promise<URI> {
+		const real: UriComponents = await this.channel.call('realpath', [resource]);
+		return URI.revive(real);
+	}
+
 	//#endregion
 }

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
+import { promisify } from 'util';
 import { gracefulify } from 'graceful-fs';
 import { Barrier, retry } from 'vs/base/common/async';
 import { ResourceMap } from 'vs/base/common/map';
@@ -434,6 +435,15 @@ export class DiskFileSystemProvider extends AbstractDiskFileSystemProvider imple
 		}
 
 		return bytesRead;
+	}
+
+	async realpath(resource: URI): Promise<URI> {
+		const filePath = this.toFilePath(resource);
+		const real = await promisify(fs.realpath)(filePath);
+		return URI.from({
+			...resource,
+			path: real,
+		});
 	}
 
 	private normalizePos(fd: number, pos: number): number | null {

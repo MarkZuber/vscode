@@ -93,6 +93,20 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		const recentlyOpenedRaw = this.storageService.get(BrowserWorkspacesService.RECENTLY_OPENED_KEY, StorageScope.APPLICATION);
 		if (recentlyOpenedRaw) {
 			const recentlyOpened = restoreRecentlyOpened(JSON.parse(recentlyOpenedRaw), this.logService);
+
+			for (const result of recentlyOpened.workspaces) {
+				// @ts-ignore private member access
+				if (result.folderUri) {
+					// @ts-ignore private member access
+					const uri = result.folderUri as URI;
+					const stat = await this.fileService.resolve(uri);
+					if (stat && stat.realPath) {
+						// @ts-ignore private member access
+						result.folderUri = URI.from({ ...result.folderUri, path: stat.realPath });
+					}
+				}
+			}
+
 			recentlyOpened.workspaces = recentlyOpened.workspaces.filter(recent => {
 
 				// In web, unless we are in a temporary workspace, we cannot support

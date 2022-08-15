@@ -520,6 +520,7 @@ export interface IFileSystemProvider {
 	read?(fd: number, pos: number, data: Uint8Array, offset: number, length: number): Promise<number>;
 	write?(fd: number, pos: number, data: Uint8Array, offset: number, length: number): Promise<number>;
 
+	realpath?(resource: URI): Promise<URI>;
 	cloneFile?(from: URI, to: URI): Promise<void>;
 }
 
@@ -1033,6 +1034,8 @@ export interface IFileStat extends IBaseFileStat {
 	 * The children of the file stat or undefined if none.
 	 */
 	children: IFileStat[] | undefined;
+
+	realPath?: string;
 }
 
 export interface IFileStatWithMetadata extends IFileStat, IBaseFileStatWithMetadata {
