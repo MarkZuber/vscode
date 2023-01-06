@@ -15,7 +15,7 @@ import { join } from 'vs/base/common/path';
 import { Platform, platform } from 'vs/base/common/platform';
 import { generateUuid } from 'vs/base/common/uuid';
 import { ClientConnectionEvent, IPCServer } from 'vs/base/parts/ipc/common/ipc';
-import { ChunkStream, Client, ISocket, Protocol, SocketCloseEvent, SocketCloseEventType, SocketDiagnostics, SocketDiagnosticsEventType } from 'vs/base/parts/ipc/common/ipc.net';
+import { ChunkStream, Client, ISocket, LargeRpcMessageEvent, LargeRpcMessageType, Protocol, ProtocolConstants, SocketCloseEvent, SocketCloseEventType, SocketDiagnostics, SocketDiagnosticsEventType } from 'vs/base/parts/ipc/common/ipc.net';
 
 // TODO@bpasero remove me once electron utility process has landed
 function getNodeDependencies() {
@@ -27,6 +27,7 @@ function getNodeDependencies() {
 	};
 }
 
+
 export class NodeSocket implements ISocket {
 
 	public readonly debugLabel: string;
@@ -35,6 +36,13 @@ export class NodeSocket implements ISocket {
 	private readonly _closeListener: (hadError: boolean) => void;
 	private readonly _endListener: () => void;
 	private _canWrite = true;
+
+	// NodeSocket doesn't detect/fire this event.
+	public onLargeRpcMessageDetected(_listener: (e: LargeRpcMessageEvent) => void) {
+		return {
+			dispose: () => { },
+		};
+	}
 
 	public traceSocketEvent(type: SocketDiagnosticsEventType, data?: VSBuffer | Uint8Array | ArrayBuffer | ArrayBufferView | any): void {
 		SocketDiagnostics.traceSocketEvent(this.socket, this.debugLabel, type, data);
@@ -215,6 +223,9 @@ export class WebSocketNodeSocket extends Disposable implements ISocket, ISocketT
 	private readonly _onClose = this._register(new Emitter<SocketCloseEvent>());
 	private _isEnded: boolean = false;
 
+	private readonly _onLargeRpcMessageDetected = this._register(new Emitter<LargeRpcMessageEvent>());
+	readonly onLargeRpcMessageDetected = this._onLargeRpcMessageDetected.event;
+
 	private readonly _state = {
 		state: ReadState.PeekHeader,
 		readLen: Constants.MinHeaderByteSize,
@@ -273,6 +284,7 @@ export class WebSocketNodeSocket extends Disposable implements ISocket, ISocketT
 		this._incomingData = new ChunkStream();
 		this._register(this.socket.onData(data => this._acceptChunk(data)));
 		this._register(this.socket.onClose((e) => this._onClose.fire(e)));
+		this._register(this._flowManager.onLargeRpcMessageDetected((e) => this._onLargeRpcMessageDetected.fire(e)));
 	}
 
 	public override dispose(): void {
@@ -300,7 +312,16 @@ export class WebSocketNodeSocket extends Disposable implements ISocket, ISocketT
 	}
 
 	public write(buffer: VSBuffer): void {
-		this._flowManager.writeMessage(buffer);
+		const maxSendChunkSize = ProtocolConstants.LargeRpcMessageThreshold;
+		if (buffer.byteLength <= maxSendChunkSize) {
+			this._flowManager.writeMessage(buffer);
+		} else {
+			let start = 0;
+			while (start < buffer.byteLength) {
+				this._flowManager.writeMessage(buffer.slice(start, Math.min(start + maxSendChunkSize, buffer.byteLength)));
+				start += maxSendChunkSize;
+			}
+		}
 	}
 
 	private _write(buffer: VSBuffer, compressed: boolean): void {
@@ -468,6 +489,9 @@ class WebSocketFlowManager extends Disposable {
 	private readonly _onDidFinishProcessingWriteQueue = this._register(new Emitter<void>());
 	public readonly onDidFinishProcessingWriteQueue = this._onDidFinishProcessingWriteQueue.event;
 
+	private readonly _onLargeRpcMessageDetected = this._register(new Emitter<LargeRpcMessageEvent>());
+	readonly onLargeRpcMessageDetected = this._onLargeRpcMessageDetected.event;
+
 	public get permessageDeflate(): boolean {
 		return Boolean(this._zlibInflateStream && this._zlibDeflateStream);
 	}
@@ -535,8 +559,17 @@ class WebSocketFlowManager extends Disposable {
 	 */
 	private _deflateMessage(zlibDeflateStream: ZlibDeflateStream, buffer: VSBuffer): Promise<VSBuffer> {
 		return new Promise<VSBuffer>((resolve, reject) => {
+			const start = performance.now();
 			zlibDeflateStream.write(buffer);
-			zlibDeflateStream.flush(data => resolve(data));
+
+			zlibDeflateStream.flush(data => {
+				const end = performance.now();
+				const delayMillis = end - start;
+				if (delayMillis > ProtocolConstants.DeflateMessageFlushDelayThresholdMillis) {
+					this._onLargeRpcMessageDetected.fire({ rpcType: LargeRpcMessageType.ZlibFlushDelay, delayMillis, bufferSize: buffer.buffer.byteLength });
+				}
+				resolve(data);
+			});
 		});
 	}
 

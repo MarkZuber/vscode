@@ -137,6 +137,26 @@ export interface WebSocketCloseEvent {
 
 export type SocketCloseEvent = NodeSocketCloseEvent | WebSocketCloseEvent | undefined;
 
+export const enum LargeRpcMessageType {
+	LargeRpcMessage,
+	ZlibFlushDelay
+}
+
+export function largeRpcMessageTypeToString(largeRpcMessageType: LargeRpcMessageType): 'LargeRpcMessage' | 'ZlibFlushDelay' {
+	switch (largeRpcMessageType) {
+		case LargeRpcMessageType.LargeRpcMessage: return 'LargeRpcMessage';
+		case LargeRpcMessageType.ZlibFlushDelay: return 'ZlibFlushDelay';
+	}
+}
+
+export class LargeRpcMessageEvent {
+	constructor(
+		public readonly rpcType: LargeRpcMessageType,
+		public readonly delayMillis: number,
+		public readonly bufferSize: number
+	) { }
+}
+
 export interface SocketTimeoutEvent {
 	readonly unacknowledgedMsgCount: number;
 	readonly timeSinceOldestUnacknowledgedMsg: number;
@@ -146,6 +166,7 @@ export interface SocketTimeoutEvent {
 export interface ISocket extends IDisposable {
 	onData(listener: (e: VSBuffer) => void): IDisposable;
 	onClose(listener: (e: SocketCloseEvent) => void): IDisposable;
+	onLargeRpcMessageDetected(listener: (e: LargeRpcMessageEvent) => void): IDisposable;
 	onEnd(listener: () => void): IDisposable;
 	write(buffer: VSBuffer): void;
 	end(): void;
@@ -325,6 +346,14 @@ export const enum ProtocolConstants {
 	 * Having 3 or more samples with high latency will trigger a high latency event.
 	 */
 	HighLatencySampleThreshold = 3,
+	/**
+	 * Having one message being larger than 10mb will trigger a large rpc message event.
+	 */
+	LargeRpcMessageThreshold = 10 * 1024 * 1024,
+	/**
+	 * If a zlib flush takes longer than this threshold we will fire a large rpc message event.
+	 */
+	DeflateMessageFlushDelayThresholdMillis = 1000
 }
 
 class ProtocolMessage {
@@ -926,6 +955,9 @@ export class PersistentProtocol implements IMessagePassingProtocol {
 	private readonly _onDidChangeConnectionHealth = new BufferedEmitter<ConnectionHealth>();
 	readonly onDidChangeConnectionHealth = this._onDidChangeConnectionHealth.event;
 
+	private readonly _onLargeRpcMessageDetected = new BufferedEmitter<LargeRpcMessageEvent>();
+	readonly onLargeRpcMessageDetected = this._onLargeRpcMessageDetected.event;
+
 	public get unacknowledgedCount(): number {
 		return this._outgoingMsgId - this._outgoingAckId;
 	}
@@ -954,6 +986,7 @@ export class PersistentProtocol implements IMessagePassingProtocol {
 		this._socketReader = this._socketDisposables.add(new ProtocolReader(this._socket));
 		this._socketDisposables.add(this._socketReader.onMessage(msg => this._receiveMessage(msg)));
 		this._socketDisposables.add(this._socket.onClose(e => this._onSocketClose.fire(e)));
+		this._socketDisposables.add(this._socket.onLargeRpcMessageDetected(e => this._onLargeRpcMessageDetected.fire(e)));
 		this._socketLatencyMonitor = this._socketDisposables.add(new LatencyMonitor()); // is started immediately
 		this._socketDisposables.add(this._socketLatencyMonitor.onSendLatencyRequest(buffer => this._sendLatencyMeasurementRequest(buffer)));
 		this._socketDisposables.add(this._socketLatencyMonitor.onHighRoundTripTime(e => this._onHighRoundTripTime.fire(e)));
@@ -1040,6 +1073,7 @@ export class PersistentProtocol implements IMessagePassingProtocol {
 		this._socketWriter = this._socketDisposables.add(new ProtocolWriter(this._socket));
 		this._socketReader = this._socketDisposables.add(new ProtocolReader(this._socket));
 		this._socketDisposables.add(this._socketReader.onMessage(msg => this._receiveMessage(msg)));
+		this._socketDisposables.add(this._socket.onClose(e => this._onSocketClose.fire(e)));
 		this._socketDisposables.add(this._socket.onClose(e => this._onSocketClose.fire(e)));
 		this._socketLatencyMonitor = this._socketDisposables.add(new LatencyMonitor()); // will be started later
 		this._socketDisposables.add(this._socketLatencyMonitor.onSendLatencyRequest(buffer => this._sendLatencyMeasurementRequest(buffer)));
@@ -1165,6 +1199,10 @@ export class PersistentProtocol implements IMessagePassingProtocol {
 	}
 
 	send(buffer: VSBuffer): void {
+		if (buffer.byteLength >= ProtocolConstants.LargeRpcMessageThreshold) {
+			this._onLargeRpcMessageDetected.fire({ rpcType: LargeRpcMessageType.LargeRpcMessage, delayMillis: 0, bufferSize: buffer.byteLength });
+		}
+
 		const myId = ++this._outgoingMsgId;
 		this._incomingAckId = this._incomingMsgId;
 		const msg = new ProtocolMessage(ProtocolMessageType.Regular, myId, this._incomingAckId, buffer);

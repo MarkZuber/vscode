@@ -8,7 +8,7 @@ import { RunOnceScheduler } from 'vs/base/common/async';
 import { VSBuffer } from 'vs/base/common/buffer';
 import { Emitter, Event } from 'vs/base/common/event';
 import { Disposable, IDisposable } from 'vs/base/common/lifecycle';
-import { ISocket, SocketCloseEvent, SocketCloseEventType, SocketDiagnostics, SocketDiagnosticsEventType } from 'vs/base/parts/ipc/common/ipc.net';
+import { ISocket, LargeRpcMessageEvent, SocketCloseEvent, SocketCloseEventType, SocketDiagnostics, SocketDiagnosticsEventType } from 'vs/base/parts/ipc/common/ipc.net';
 import { IConnectCallback, ISocketFactory } from 'vs/platform/remote/common/remoteAgentConnection';
 import { RemoteAuthorityResolverError, RemoteAuthorityResolverErrorCode } from 'vs/platform/remote/common/remoteAuthorityResolver';
 
@@ -226,6 +226,13 @@ class BrowserSocket implements ISocket {
 		this.socket.close();
 	}
 
+	// BrowserSocket doesn't detect/fire this event.
+	public onLargeRpcMessageDetected(_listener: (e: LargeRpcMessageEvent) => void) {
+		return {
+			dispose: () => { },
+		};
+	}
+
 	public onData(listener: (e: VSBuffer) => void): IDisposable {
 		return this.socket.onData((data) => listener(VSBuffer.wrap(new Uint8Array(data))));
 	}
@@ -282,6 +289,3 @@ export class BrowserSocketFactory implements ISocketFactory {
 		});
 	}
 }
-
-
-

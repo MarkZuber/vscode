@@ -52,7 +52,7 @@ import { ILogService } from 'vs/platform/log/common/log';
 import { ITimerService } from 'vs/workbench/services/timer/browser/timerService';
 import { getRemoteName } from 'vs/platform/remote/common/remoteHosts';
 import { IActionViewItem } from 'vs/base/browser/ui/actionbar/actionbar';
-import { connectionHealthToString } from 'vs/base/parts/ipc/common/ipc.net';
+import { connectionHealthToString, largeRpcMessageTypeToString } from 'vs/base/parts/ipc/common/ipc.net';
 import { getVirtualWorkspaceLocation } from 'vs/platform/workspace/common/virtualWorkspace';
 
 interface HelpInformation {
@@ -1016,6 +1016,33 @@ export class RemoteAgentConnectionStatusListener extends Disposable implements I
 							remoteName: getRemoteName(environmentService.remoteAuthority),
 							reconnectionToken: e.reconnectionToken,
 							connectionHealth: connectionHealthToString(e.connectionHealth)
+						});
+						break;
+
+					case PersistentConnectionEventType.LargeRpcMessageDetected:
+						type LargeRpcMessageClassification = {
+							owner: 'alexdima';
+							comment: 'A large RPC message has been detected that could cause thread delays or connection latency.';
+							remoteName: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The name of the resolver.' };
+							reconnectionToken: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The identifier of the connection.' };
+							rpcType: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Classification on the large rpc message evente.' };
+							bufferSize: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Buffer size of the large rpc message.' };
+							delayMillis: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Amount of delay (in millis) caused by zlib deflate (zero for send).' };
+						};
+						type LargeRpcMessageEvent = {
+							remoteName: string | undefined;
+							reconnectionToken: string;
+							rpcType: 'LargeRpcMessage' | 'ZlibFlushDelay';
+							bufferSize: number;
+							delayMillis: number;
+						};
+
+						telemetryService.publicLog2<LargeRpcMessageEvent, LargeRpcMessageClassification>('largeRpcMessage', {
+							remoteName: getRemoteName(environmentService.remoteAuthority),
+							reconnectionToken: e.reconnectionToken,
+							rpcType: largeRpcMessageTypeToString(e.rpcType),
+							bufferSize: e.bufferSize,
+							delayMillis: e.delayMillis
 						});
 						break;
 				}

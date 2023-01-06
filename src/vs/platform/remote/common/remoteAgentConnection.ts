@@ -11,7 +11,7 @@ import { Emitter } from 'vs/base/common/event';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
 import { generateUuid } from 'vs/base/common/uuid';
 import { IIPCLogger } from 'vs/base/parts/ipc/common/ipc';
-import { Client, ConnectionHealth, ISocket, PersistentProtocol, ProtocolConstants, SocketCloseEventType } from 'vs/base/parts/ipc/common/ipc.net';
+import { Client, ConnectionHealth, ISocket, LargeRpcMessageType, PersistentProtocol, ProtocolConstants, SocketCloseEventType } from 'vs/base/parts/ipc/common/ipc.net';
 import { ILogService } from 'vs/platform/log/common/log';
 import { RemoteAgentConnectionContext } from 'vs/platform/remote/common/remoteAgentEnvironment';
 import { RemoteAuthorityResolverError } from 'vs/platform/remote/common/remoteAuthorityResolver';
@@ -484,7 +484,8 @@ export const enum PersistentConnectionEventType {
 	ReconnectionRunning,
 	ReconnectionPermanentFailure,
 	ConnectionGain,
-	ConnectionHealthChanged
+	ConnectionHealthChanged,
+	LargeRpcMessageDetected
 }
 export class ConnectionLostEvent {
 	public readonly type = PersistentConnectionEventType.ConnectionLost;
@@ -538,7 +539,19 @@ export class ReconnectionPermanentFailureEvent {
 		public readonly handled: boolean
 	) { }
 }
-export type PersistentConnectionEvent = ConnectionGainEvent | ConnectionHealthChangedEvent | ConnectionLostEvent | ReconnectionWaitEvent | ReconnectionRunningEvent | ReconnectionPermanentFailureEvent;
+
+export class LargeRpcMessageDetectedEvent {
+	public readonly type = PersistentConnectionEventType.LargeRpcMessageDetected;
+	constructor(
+		public readonly rpcType: LargeRpcMessageType,
+		public readonly reconnectionToken: string,
+		public readonly delayMillis: number,
+		public readonly bufferSize: number
+	) { }
+}
+
+export type PersistentConnectionEvent = ConnectionGainEvent | ConnectionHealthChangedEvent | ConnectionLostEvent | ReconnectionWaitEvent | ReconnectionRunningEvent | ReconnectionPermanentFailureEvent | LargeRpcMessageDetectedEvent;
+
 
 export abstract class PersistentConnection extends Disposable {
 
@@ -614,6 +627,9 @@ export abstract class PersistentConnection extends Disposable {
 		}));
 		this._register(protocol.onDidChangeConnectionHealth((connectionHealth) => {
 			this._onDidStateChange.fire(new ConnectionHealthChangedEvent(this.reconnectionToken, connectionHealth));
+		}));
+		this._register(protocol.onLargeRpcMessageDetected((largeRpcEvent) => {
+			this._onDidStateChange.fire(new LargeRpcMessageDetectedEvent(largeRpcEvent.rpcType, this.reconnectionToken, largeRpcEvent.delayMillis, largeRpcEvent.bufferSize));
 		}));
 
 		PersistentConnection._instances.push(this);
